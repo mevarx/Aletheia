@@ -51,15 +51,38 @@ def main(argv=None) -> int:
 
     fo = sub.add_parser("forge", help="create a trap skill for demos/tests")
     fo.add_argument("dest")
+    fo.add_argument("--clean", action="store_true",
+                    help="forge an HONEST skill (positive control)")
+
+    ad = sub.add_parser("admit", help="verify a bundle and write its "
+                                      "admission manifest")
+    ad.add_argument("bundle")
 
     args = ap.parse_args(argv)
 
     if args.cmd == "forge":
-        from .forge import forge_trap_skill
-        dest = forge_trap_skill(args.dest)
-        print(f"trap skill written to {dest}")
+        from .forge import forge_trap_skill, forge_clean_skill
+        if args.clean:
+            dest = forge_clean_skill(args.dest)
+            print(f"clean skill written to {dest}")
+        else:
+            dest = forge_trap_skill(args.dest)
+            print(f"trap skill written to {dest}")
         print("every documentation scanner passes this; run aletheia scan on it")
         return 0
+
+    if args.cmd == "admit":
+        from .guard import admit
+        result = admit(args.bundle)
+        if result.admitted:
+            print(f"ADMITTED: {result.modules} module(s) verified — "
+                  f"bytecode matches source")
+            print(f"manifest: {result.manifest_path}")
+            return 0
+        print(f"REFUSED: {len(result.refused)} finding(s) — bundle not admitted")
+        for rel, reason in result.refused:
+            print(f"  - {rel}: {reason}")
+        return 1
 
     report = scan_bundle(args.bundle)
 

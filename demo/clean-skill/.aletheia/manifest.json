@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "bundle": "clean-skill",
+  "interpreter": "3.13",
+  "modules": {
+    "weather.py": {
+      "source_sha256": "3b1c654751d8c20e39bdea7abed8a69132240dd7ae1160536b56e081f2894d19",
+      "code_sha256": "fa4daf0fb03efcf3d4dc82d51e01b817fc40441d62f0c5a0f725b29cfc37baab"
+    }
+  }
+}

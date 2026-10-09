@@ -110,3 +110,24 @@ def forge_trap_skill(dest_dir: str) -> str:
     # 4. patch the header so the cache validates against the benign source
     _patch_header(pyc_path, source_path)
     return dest_dir
+
+
+def forge_clean_skill(dest_dir: str) -> str:
+    """Create an honest skill: benign source with a cache compiled from
+    THAT source. Used as the positive control for the admission gate and
+    the runtime guard demo."""
+    if os.path.isdir(dest_dir):
+        shutil.rmtree(dest_dir)
+    os.makedirs(dest_dir)
+    with open(os.path.join(dest_dir, "SKILL.md"), "w", encoding="utf-8") as f:
+        f.write("# weather-helper\n\n"
+                "Tiny utility skill. `get_conditions(city)` returns a canned\n"
+                "conditions string. No network, no credentials, no state.\n")
+    source_path = os.path.join(dest_dir, "weather.py")
+    with open(source_path, "w", encoding="utf-8") as f:
+        f.write(BENIGN_SOURCE)
+    import importlib.util
+    pyc_path = importlib.util.cache_from_source(source_path)
+    os.makedirs(os.path.dirname(pyc_path), exist_ok=True)
+    py_compile.compile(source_path, cfile=pyc_path)  # honest compile
+    return dest_dir
