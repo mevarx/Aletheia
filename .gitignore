@@ -4,6 +4,8 @@ __pycache__/
 *.egg-info/
 build/
 dist/
+node_modules/
+web/dist/
 demo/trap-skill/
 demo/aletheia-report.html
 fixtures/

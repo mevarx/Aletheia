@@ -59,12 +59,44 @@ def model_pulled(model: str = DEFAULT_MODEL, host: str = OLLAMA_HOST) -> bool:
         return False
 
 
+def status(model: str = DEFAULT_MODEL,
+           host: str = OLLAMA_HOST) -> dict:
+    """Gemma enablement status for the frontend: availability + model."""
+    available = ollama_available(host)
+    pulled = model_pulled(model, host) if available else False
+    return {
+        "host": host,
+        "model": model,
+        "ollama_available": available,
+        "model_pulled": pulled,
+        "gemma_enabled": bool(available and pulled),
+        "hint": (None if (available and pulled) else
+                 f"run: ollama pull {model}  (OLLAMA_HOST={host})"),
+    }
+
+
 def explain_mismatch(source_code: str, executed_behavior: dict,
                      diffs: list, model: str = DEFAULT_MODEL,
                      host: str = OLLAMA_HOST, timeout: int = 90) -> str | None:
     """Ask the local model for the semantic verdict. None if unavailable."""
+    chunks = list(explain_mismatch_stream(
+        source_code, executed_behavior, diffs,
+        model=model, host=host, timeout=timeout))
+    return "".join(chunks).strip() or None if chunks else None
+
+
+def explain_mismatch_stream(source_code: str, executed_behavior: dict,
+                            diffs: list, model: str = DEFAULT_MODEL,
+                            host: str = OLLAMA_HOST,
+                            timeout: int = 90):
+    """Yield semantic verdict tokens as they arrive (Ollama stream=True).
+
+    Yields str chunks. Yields nothing when Gemma is not enabled — the
+    deterministic detection never depends on it, so callers must treat
+    an empty stream as 'semantic unavailable' and continue.
+    """
     if not (ollama_available(host) and model_pulled(model, host)):
-        return None
+        return
     prompt = PROMPT_TEMPLATE.format(
         source_code=source_code,
         imports=", ".join(executed_behavior.get("imports", [])) or "none",
@@ -77,14 +109,24 @@ def explain_mismatch(source_code: str, executed_behavior: dict,
     body = json.dumps({
         "model": model,
         "prompt": prompt,
-        "stream": False,
+        "stream": True,
         "options": {"temperature": 0},
     }).encode()
     req = urllib.request.Request(f"{host}/api/generate", data=body,
                                  headers={"Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
-            data = json.loads(r.read())
-        return data.get("response", "").strip() or None
+            for line in r:
+                if not line.strip():
+                    continue
+                try:
+                    data = json.loads(line)
+                except Exception:
+                    continue
+                chunk = data.get("response", "")
+                if chunk:
+                    yield chunk
+                if data.get("done"):
+                    break
     except Exception:
-        return None
+        return

@@ -9,6 +9,7 @@
   aletheia attack                   prove enforcement with bypass attacks
   aletheia attack --hard            prove HardGuard audit-hook enforcement
   aletheia attack --hard --json     machine-readable attack report
+  aletheia serve --port 8000        scan-from-GitHub API + frontend backend
 """
 from __future__ import annotations
 
@@ -69,6 +70,10 @@ def main(argv=None) -> int:
     at.add_argument("--json", action="store_true",
                     help="machine-readable output")
 
+    sv = sub.add_parser("serve", help="scan-from-GitHub API + frontend backend")
+    sv.add_argument("--port", type=int, default=8000)
+    sv.add_argument("--host", default="127.0.0.1")
+
     args = ap.parse_args(argv)
 
     if args.cmd == "forge":
@@ -94,6 +99,10 @@ def main(argv=None) -> int:
         for rel, reason in result.refused:
             print(f"  - {rel}: {reason}")
         return 1
+
+    if args.cmd == "serve":
+        from .server import main as serve_main
+        return serve_main(["--host", args.host, "--port", str(args.port)])
 
     if args.cmd == "attack":
         from .attack import run_all, run_all_hard
