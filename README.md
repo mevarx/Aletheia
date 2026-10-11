@@ -47,7 +47,11 @@ agent's own process re-verifies every import against the manifest: source
 changed, module unlisted, or bytecode that doesn't match the admission
 reference raises `ImportError` **before a single instruction executes.**
 An attacker who swaps the `.pyc` *after* installation still cannot run
-their code.
+their code. **HardGuard** (`aletheia/hardguard.py`) goes further with a
+process-wide `sys.addaudithook` watching `exec` / `compile` / `import` /
+`open` — closing the loader-bypass family (`importlib.spec_from_file_location`,
+`exec(marshal.loads(pyc))`). Measured on the bypass harness
+(`python -m aletheia attack`): soft guard 4/6, HardGuard 6/6 blocked.
 
 This is the difference between an antivirus that finds malware and a
 runtime that cannot run it.
@@ -76,7 +80,10 @@ Detection is table stakes; **explanation and enforcement are not.**
 3. **Semantic layer (optional):** a local open-weight model (Gemma 3 4B via
    Ollama) writes the plain-language verdict: what the source claims vs.
    what the executed bytecode actually does. The detection does not depend
-   on it.
+   on it. The layer streams tokens (`explain_mismatch_stream`, Ollama
+   `stream: True`) and reports enablement via `semantic.status()` /
+   `GET /api/ollama/status` — the scan succeeds with deterministic results
+   when Gemma is off (`ollama pull gemma3:4b` to enable).
 
 ## Quick start
 
@@ -93,8 +100,25 @@ python -m aletheia forge --clean demo/clean-skill
 python -m aletheia scan demo/trap-skill --semantic --html report.html
 python -m aletheia admit demo/trap-skill        # REFUSED
 python -m aletheia admit demo/clean-skill       # ADMITTED
+python -m aletheia attack          # soft guard: 4/6 blocked (expected bypasses)
+python -m aletheia attack --hard   # HardGuard: 6/6 blocked
 bash demo/evidence.sh          # three-scanner comparison
 ```
+
+## Frontend — scan a skill from GitHub with live logs
+
+```bash
+pip install -e .[server]
+python -m aletheia serve --port 8000
+cd web && npm install && npm run dev   # open http://localhost:5173
+```
+
+Paste any GitHub skill URL. The backend clones `--depth 1` to a temp dir,
+then streams `clone → walk → verify … → admit → semantic …` over SSE
+(`GET /api/scan/stream?url=..`), so each step appears in the live-log pane
+as it happens. `POST /api/scan` returns the same verdict as JSON;
+`GET /api/ollama/status` shows the Gemma badge (`gemma_enabled`,
+or the `ollama pull gemma3:4b` hint when off).
 
 Exit code is `1` on any CRITICAL finding or refused admission — usable as
 a CI gate.
@@ -139,23 +163,30 @@ aletheia/
   differ.py      recursive code-object diff (the deterministic core)
   behavior.py    behavior extraction from executed bytecode
   scanner.py     bundle walking + verdict logic (incl. sourceless .pyc)
-  semantic.py    optional local open-weight model layer (Ollama/Gemma)
+  semantic.py    Gemma layer: status() + streaming verdicts (Ollama/Gemma)
   guard.py       admission gate + runtime meta_path enforcement
+  hardguard.py   HardGuard: audit-hook enforcement (exec/compile/import/open)
+  attack.py      bypass-attack harness proving soft 4/6 vs hard 6/6
+  server.py      scan-from-GitHub API with SSE live logs + Gemma status
   report.py      self-contained HTML report
-  cli.py         scan / forge / admit commands
+  cli.py         scan / forge / admit / attack / serve commands
   forge.py       trap + honest skill generators
 demo/
   three_act_demo.py   verify → admit → enforce, in one run
   evidence.sh         three-scanner comparison
   loader_proof.py     captures the loader executing hidden bytecode
-tests/           14 tests: trap caught, clean passes, admission refusal,
-                 post-admission trojan-swap blocked, loader proof
+tests/           18 tests: trap caught, clean passes, admission refusal,
+                 post-admission trojan-swap blocked, loader proof,
+                 attack harness (soft blocks import, hard blocks
+                 exec-marshal, honest import succeeds)
+web/             React+Vite frontend: GitHub URL input, SSE live-log pane,
+                 verdict + Gemma semantic boxes (proxies /api → :8000)
 ```
 
 ## Test suite
 
 ```bash
 python -m pytest tests/ -v
-# 14 passed — including test_post_admission_trojan_swap_is_blocked:
+# 18 passed — including test_post_admission_trojan_swap_is_blocked:
 # the empirical proof that enforcement works.
 ```
