@@ -5,6 +5,10 @@
   aletheia scan <bundle> --json     machine-readable output
   aletheia scan <bundle> --semantic include local LLM verdicts
   aletheia forge <dest>             create a trap skill (demo/tests)
+  aletheia admit <bundle>           verify a bundle, write admission manifest
+  aletheia attack                   prove enforcement with bypass attacks
+  aletheia attack --hard            prove HardGuard audit-hook enforcement
+  aletheia attack --hard --json     machine-readable attack report
 """
 from __future__ import annotations
 
@@ -58,6 +62,13 @@ def main(argv=None) -> int:
                                       "admission manifest")
     ad.add_argument("bundle")
 
+    at = sub.add_parser("attack", help="prove enforcement with bypass attacks")
+    at.add_argument("--hard", action="store_true",
+                    help="use HardGuard audit-hook enforcement "
+                         "(6/6 blocked expected)")
+    at.add_argument("--json", action="store_true",
+                    help="machine-readable output")
+
     args = ap.parse_args(argv)
 
     if args.cmd == "forge":
@@ -83,6 +94,21 @@ def main(argv=None) -> int:
         for rel, reason in result.refused:
             print(f"  - {rel}: {reason}")
         return 1
+
+    if args.cmd == "attack":
+        from .attack import run_all, run_all_hard
+        results = run_all_hard() if args.hard else run_all()
+        if args.json:
+            print(json.dumps([
+                {"attack": r.name,
+                 "malicious_executed": r.malicious_executed,
+                 "guard_blocked": r.guard_blocked,
+                 "evidence": r.evidence}
+                for r in results], indent=2))
+        else:
+            from .attack import report as attack_report
+            attack_report(results)
+        return 0 if all(r.guard_blocked for r in results) else 1
 
     report = scan_bundle(args.bundle)
 
